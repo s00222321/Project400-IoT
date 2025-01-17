@@ -78,12 +78,8 @@ void loop() {
   if (startGame) {
     Serial.println("Starting reaction game...");
 
-    // Wait for a random delay before buzzing
-    unsigned long delayTime = random(2000, 5000); // 2 to 5 seconds
-    delay(delayTime);
-
     // Buzz the haptic motor
-    haptic.drv2605_Play_Waveform(118);
+    haptic.drv2605_Play_Waveform(2);
     Serial.println("Buzz! React now!");
 
     // Start timing
