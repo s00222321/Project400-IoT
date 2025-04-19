@@ -30,19 +30,26 @@ DRV2605 haptic;
 
 // Global variable for tracking incoming commands
 String receivedCommand = "";
+unsigned long lastCommandTime = 0;
 
-void playHapticFeedback(int buzzCount, int intensity) {
-    for (int i = 0; i < buzzCount; i++) {
+void playHapticFeedback(int buzzCount, int intensity)
+{
+    for (int i = 0; i < buzzCount; i++)
+    {
         haptic.drv2605_Play_Waveform(intensity);
         delay(500);
     }
 }
 
-void waitForTouch(int touchPin) {
-    while (digitalRead(touchPin) == LOW) {}
+void waitForTouch(int touchPin)
+{
+    while (digitalRead(touchPin) == LOW)
+    {
+    }
 }
 
-void measureReactionTime(int touchPin, int buzzCount, const char* fingerName, int hapticIntensity) {
+void measureReactionTime(int touchPin, int buzzCount, const char *fingerName, int hapticIntensity, String gameMode, String hand)
+{
     Serial.print("Starting ");
     Serial.print(fingerName);
     Serial.println(" test...");
@@ -51,63 +58,92 @@ void measureReactionTime(int touchPin, int buzzCount, const char* fingerName, in
     Serial.println("Buzz! React now!");
 
     unsigned long startTime = millis();
-    waitForTouch(touchPin);
-    unsigned long reactionTime = millis() - startTime;
+    bool timeoutOccurred = false;
+    
+    while (millis() - startTime < 10000) // 10 second timeout
+    {
+        if (digitalRead(touchPin) == HIGH)
+        {
+            unsigned long reactionTime = millis() - startTime;
 
-    Serial.print(fingerName);
-    Serial.print(" Reaction Time: ");
-    Serial.print(reactionTime);
-    Serial.println(" ms");
+            String reactionTimeStr = String(fingerName) + " " + String(reactionTime) + " " + gameMode.charAt(0) + " " + hand.charAt(0); // length issue so had to shorten gameMode and hand to 1 char
+            reactionCharacteristic->setValue(reactionTimeStr.c_str());
+            reactionCharacteristic->notify();
+            Serial.println("Reaction time sent over BLE");
+            return; // Exit function once reaction is registered
+        }
+    }
 
-    String reactionTimeStr = String(fingerName) + " " + String(reactionTime);
-    reactionCharacteristic->setValue(reactionTimeStr.c_str());
+    // If no touch detected in 10 seconds, send a cancel message
+    reactionCharacteristic->setValue("cancelled");
     reactionCharacteristic->notify();
-    Serial.println("Reaction time sent over BLE");
-    delay(2000);
+    Serial.println("Timeout! Cancel message sent over BLE.");
 }
 
-class ReactionGameCallbacks : public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic *pCharacteristic) override {
+class ReactionGameCallbacks : public BLECharacteristicCallbacks
+{
+    void onWrite(BLECharacteristic *pCharacteristic) override
+    {
         std::string rxValue = pCharacteristic->getValue();
-        if (!rxValue.empty()) {
+        if (!rxValue.empty())
+        {
             String command = String(rxValue.c_str());
             Serial.print("Received command: ");
             Serial.println(command);
-            
+            lastCommandTime = millis(); // Reset the timeout timer
+
+            // Split by commas
+            int firstComma = command.indexOf(',');
+            int secondComma = command.indexOf(',', firstComma + 1);
+
+            String finger = command.substring(0, firstComma);
+            String gameMode = command.substring(firstComma + 1, secondComma);
+            String hand = command.substring(secondComma + 1);
+
             // Call measureReactionTime directly
-            if (command == "index") {
-                measureReactionTime(INDEX_TOUCH_SENSOR_PIN, 1, "Index", 1);
-            } else if (command == "middle") {
-                measureReactionTime(MIDDLE_TOUCH_SENSOR_PIN, 2, "Middle", 1);
-            } else if (command == "ring") {
-                measureReactionTime(RING_TOUCH_SENSOR_PIN, 3, "Ring", 1);
-            } else if (command == "pinky") {
-                measureReactionTime(PINKY_TOUCH_SENSOR_PIN, 4, "Pinky", 1);
+            if (finger == "index")
+            {
+                measureReactionTime(INDEX_TOUCH_SENSOR_PIN, 1, "Index", 1, gameMode, hand);
+            }
+            else if (finger == "middle")
+            {
+                measureReactionTime(MIDDLE_TOUCH_SENSOR_PIN, 2, "Middle", 1, gameMode, hand);
+            }
+            else if (finger == "ring")
+            {
+                measureReactionTime(RING_TOUCH_SENSOR_PIN, 3, "Ring", 1, gameMode, hand);
+            }
+            else if (finger == "pinky")
+            {
+                measureReactionTime(PINKY_TOUCH_SENSOR_PIN, 4, "Pinky", 1, gameMode, hand);
             }
         }
     }
 };
 
-
-void playHapticFeedback(int buzzCount, int intensity);
-
-class HapticControlCallbacks : public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic *pCharacteristic) override {
+class HapticControlCallbacks : public BLECharacteristicCallbacks
+{
+    void onWrite(BLECharacteristic *pCharacteristic) override
+    {
         std::string rxValue = pCharacteristic->getValue();
-        if (!rxValue.empty()) {
+        if (!rxValue.empty())
+        {
             int intensity = atoi(rxValue.c_str());
-            playHapticFeedback(3, 20-intensity);
+            playHapticFeedback(3, 20 - intensity);
         }
     }
 };
 
-class ServerCallbacks : public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) override {
+class ServerCallbacks : public BLEServerCallbacks
+{
+    void onConnect(BLEServer *pServer) override
+    {
         deviceConnected = true;
         Serial.println("Device connected");
     }
 
-    void onDisconnect(BLEServer* pServer) override {
+    void onDisconnect(BLEServer *pServer) override
+    {
         deviceConnected = false;
         Serial.println("Device disconnected, restarting advertising...");
         delay(500);
@@ -115,7 +151,8 @@ class ServerCallbacks : public BLEServerCallbacks {
     }
 };
 
-void setupBLE() {
+void setupBLE()
+{
     BLEDevice::init(DEVICE_NAME);
     bleServer = BLEDevice::createServer();
     bleServer->setCallbacks(new ServerCallbacks());
@@ -145,9 +182,12 @@ void setupBLE() {
     Serial.println("BLE setup complete. Waiting for connection...");
 }
 
-void setup() {
+void setup()
+{
     Serial.begin(115200);
-    while (!Serial) {}
+    while (!Serial)
+    {
+    }
 
     Serial.println("Reaction Game with BLE Started");
 
@@ -156,17 +196,20 @@ void setup() {
     pinMode(MIDDLE_TOUCH_SENSOR_PIN, INPUT);
     pinMode(PINKY_TOUCH_SENSOR_PIN, INPUT);
 
-    if (haptic.init(false, true) != 0) {
+    if (haptic.init(false, true) != 0)
+    {
         Serial.println("Haptic motor initialization failed!");
     }
-    if (haptic.drv2605_AutoCal() != 0) {
+    if (haptic.drv2605_AutoCal() != 0)
+    {
         Serial.println("Haptic motor auto calibration failed!");
     }
 
     setupBLE();
 }
 
-void loop() {
+void loop()
+{
     // Main loop does nothing, all actions are handled in callbacks
     delay(1000); // Just to avoid busy-waiting
 }
